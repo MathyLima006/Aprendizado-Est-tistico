@@ -4,7 +4,3 @@ plotly
 openpyxl
 numpy
 scikit-learn
-sklearn.model_selection
-sklearn.preprocessing 
-sklearn.svm
-sklearn.metrics
