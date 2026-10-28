@@ -7,6 +7,11 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, confusion_matrix
 import plotly.graph_objects as go
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+
+
+#streamlit run "trabalho verdadeiro.py"
 
 # Configuração
 
@@ -26,7 +31,12 @@ st.sidebar.title("🌎 World Population")
 
 pagina = st.sidebar.radio(
     "Página",
-    ["Visão Geral", "Explorar País", "Classificação SVM"]
+    [
+        "Visão Geral",
+        "Explorar País",
+        "Classificação SVM",
+        "Clusterização K-Means"
+    ]
 )
 
 # PÁGINA 1
@@ -1123,4 +1133,393 @@ elif pagina == "Classificação SVM":
         "Os outliers foram removidos apenas da visualização "
         "para facilitar a interpretação. O modelo principal "
         "continua utilizando a base completa."
+    )
+
+
+# ==========================================
+# PÁGINA 4 - CLUSTERIZAÇÃO K-MEANS
+# ==========================================
+
+elif pagina == "Clusterização K-Means":
+
+    st.title("🧩 Clusterização K-Means")
+    st.write(
+        "Agrupamento dos países por densidade populacional "
+        "utilizando aprendizado não supervisionado."
+    )
+
+    st.info(
+        "**Como funciona?** O K-Means identifica países com "
+        "densidades semelhantes, formando três grupos: "
+        "baixa, média e alta densidade."
+    )
+
+    # 1. PREPARAÇÃO DOS DADOS
+
+    base = dados.copy()
+
+    base = base.dropna(
+        subset=[
+            "Density (per km²)",
+            "Area (km²)",
+            "2022 Population"
+        ]
+    )
+
+    base = base[
+        (base["Density (per km²)"] >= 0) &
+        (base["Area (km²)"] > 0) &
+        (base["2022 Population"] > 0)
+    ].copy()
+
+    X = base[["Density (per km²)"]]
+
+    # Transformação logarítmica
+    X_log = np.log1p(X)
+
+    # Normalização
+    scaler = StandardScaler()
+    X_normalizado = scaler.fit_transform(X_log)
+
+    # 2. MÉTODO DO COTOVELO E SILHOUETTE
+
+    valores_k = list(range(2, 11))
+    inercias = []
+    silhouettes = []
+
+    for k in valores_k:
+
+        teste = KMeans(
+            n_clusters=k,
+            random_state=42,
+            n_init=10
+        )
+
+        grupos_teste = teste.fit_predict(X_normalizado)
+
+        inercias.append(teste.inertia_)
+
+        silhouettes.append(
+            silhouette_score(X_normalizado, grupos_teste)
+        )
+
+    # 3. MODELO FINAL - 3 CLUSTERS
+
+    kmeans = KMeans(
+        n_clusters=3,
+        random_state=42,
+        n_init=10
+    )
+
+    base["Cluster"] = kmeans.fit_predict(X_normalizado)
+
+    # Ordenando os grupos por densidade média
+    medias = base.groupby("Cluster")[
+        "Density (per km²)"
+    ].mean()
+
+    ordem = medias.sort_values().index
+
+    nomes = {
+        ordem[0]: "Baixa",
+        ordem[1]: "Média",
+        ordem[2]: "Alta"
+    }
+
+    base["Grupo"] = base["Cluster"].map(nomes)
+
+    cores = {
+        "Baixa": "#3B82F6",
+        "Média": "#F59E0B",
+        "Alta": "#16A34A"
+    }
+
+    ordem_grupos = ["Baixa", "Média", "Alta"]
+
+    # 4. INDICADORES PRINCIPAIS
+
+    st.subheader("📌 Visão geral dos resultados")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Países analisados", len(base))
+
+    with col2:
+        st.metric("Grupos encontrados", 3)
+
+    with col3:
+        st.metric(
+            "Silhouette Score",
+            f"{silhouettes[1]:.3f}"
+        )
+
+    st.divider()
+
+    # 5. GRÁFICOS DE AVALIAÇÃO
+
+    st.subheader("📉 Avaliação da quantidade de clusters")
+
+    st.write(
+        "O Método do Cotovelo mostra a redução da inércia, "
+        "enquanto o Silhouette Score avalia a separação "
+        "entre os grupos."
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        fig_cotovelo = px.line(
+            x=valores_k,
+            y=inercias,
+            markers=True,
+            title="Método do Cotovelo",
+            labels={
+                "x": "Número de clusters (K)",
+                "y": "Inércia"
+            }
+        )
+
+        fig_cotovelo.update_traces(
+            line_color="#3B82F6",
+            line_width=3
+        )
+
+        fig_cotovelo.add_vline(
+            x=3,
+            line_dash="dash",
+            line_color="orange"
+        )
+
+        fig_cotovelo.update_layout(
+            height=380,
+            title_x=0.5,
+            xaxis=dict(
+                tickmode="array",
+                tickvals=valores_k
+            )
+        )
+
+        st.plotly_chart(
+            fig_cotovelo,
+            use_container_width=True
+        )
+
+    with col2:
+
+        fig_silhouette = px.line(
+            x=valores_k,
+            y=silhouettes,
+            markers=True,
+            title="Qualidade dos Clusters",
+            labels={
+                "x": "Número de clusters (K)",
+                "y": "Silhouette Score"
+            }
+        )
+
+        fig_silhouette.update_traces(
+            line_color="#16A34A",
+            line_width=3
+        )
+
+        fig_silhouette.add_vline(
+            x=3,
+            line_dash="dash",
+            line_color="orange"
+        )
+
+        fig_silhouette.update_layout(
+            height=380,
+            title_x=0.5,
+            xaxis=dict(
+                tickmode="array",
+                tickvals=valores_k
+            )
+        )
+
+        st.plotly_chart(
+            fig_silhouette,
+            use_container_width=True
+        )
+
+    st.caption(
+        "K=3 foi escolhido para representar baixa, média "
+        "e alta densidade. Essa é uma escolha interpretativa, "
+        "não necessariamente o melhor K segundo as métricas."
+    )
+
+    st.divider()
+
+    # 6. GRÁFICO DOS GRUPOS
+
+    st.subheader("🌍 Países agrupados por densidade populacional")
+
+    st.write(
+        "Cada ponto representa um país. Passe o mouse "
+        "sobre ele para consultar sua população, área "
+        "e densidade."
+    )
+
+    fig_grupos = px.scatter(
+        base,
+        x="Area (km²)",
+        y="2022 Population",
+        color="Grupo",
+        category_orders={
+            "Grupo": ordem_grupos
+        },
+        color_discrete_map=cores,
+        hover_name="Country",
+        hover_data={
+            "Area (km²)": ":,.0f",
+            "2022 Population": ":,.0f",
+            "Density (per km²)": ":,.2f",
+            "Grupo": False
+        },
+        labels={
+            "Area (km²)": "Área territorial (km²)",
+            "2022 Population": "População em 2022",
+            "Grupo": "Densidade"
+        },
+        title="População × Área Territorial"
+    )
+
+    fig_grupos.update_traces(
+        marker=dict(
+            size=10,
+            opacity=0.8,
+            line=dict(
+                width=0.5,
+                color="white"
+            )
+        )
+    )
+
+    # Escala logarítmica com valores legíveis
+
+    fig_grupos.update_xaxes(
+        type="log",
+        tickmode="array",
+        tickvals=[
+            1, 10, 100, 1000,
+            10000, 100000, 1000000, 10000000
+        ],
+        ticktext=[
+            "1", "10", "100", "1 mil",
+            "10 mil", "100 mil",
+            "1 milhão", "10 milhões"
+        ]
+    )
+
+    fig_grupos.update_yaxes(
+        type="log",
+        tickmode="array",
+        tickvals=[
+            1000, 10000, 100000,
+            1000000, 10000000,
+            100000000, 1000000000,
+            10000000000
+        ],
+        ticktext=[
+            "1 mil", "10 mil", "100 mil",
+            "1 milhão", "10 milhões",
+            "100 milhões", "1 bilhão",
+            "10 bilhões"
+        ]
+    )
+
+    fig_grupos.update_layout(
+        height=570,
+        title_x=0.5,
+        legend_title_text="Densidade"
+    )
+
+    st.plotly_chart(
+        fig_grupos,
+        use_container_width=True
+    )
+
+    st.caption(
+        "Os eixos utilizam escala logarítmica para "
+        "facilitar a comparação entre países de tamanhos "
+        "muito diferentes. O K-Means utiliza somente a densidade."
+    )
+
+    st.divider()
+
+    # 7. RESUMO ESTATÍSTICO
+
+    st.subheader("📊 Características dos grupos")
+
+    resumo = base.groupby("Grupo")[
+        "Density (per km²)"
+    ].agg(
+        Países="count",
+        Mínima="min",
+        Máxima="max",
+        Média="mean"
+    ).reindex(ordem_grupos)
+
+    st.dataframe(
+        resumo.style.format({
+            "Mínima": "{:,.2f}",
+            "Máxima": "{:,.2f}",
+            "Média": "{:,.2f}"
+        }),
+        use_container_width=True
+    )
+
+    st.caption(
+        "Densidades expressas em habitantes por km²."
+    )
+
+    # 8. CONSULTA DOS PAÍSES
+
+    st.subheader("🔎 Consultar países por grupo")
+
+    grupo_escolhido = st.selectbox(
+        "Escolha um grupo:",
+        ordem_grupos
+    )
+
+    paises_grupo = base[
+        base["Grupo"] == grupo_escolhido
+    ][
+        [
+            "Country",
+            "2022 Population",
+            "Area (km²)",
+            "Density (per km²)"
+        ]
+    ].sort_values("Density (per km²)")
+
+    st.write(
+        f"**{len(paises_grupo)} países** no grupo "
+        f"de densidade {grupo_escolhido.lower()}."
+    )
+
+    st.dataframe(
+        paises_grupo.style.format({
+            "2022 Population": lambda x: f"{x:,.0f}".replace(",", "."),
+            "Area (km²)": lambda x: f"{x:,.0f}".replace(",", "."),
+            "Density (per km²)": lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        }),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # 9. CONCLUSÃO
+
+    st.divider()
+
+    st.subheader("💡 Conclusão da análise")
+
+    st.write(
+        "O K-Means identificou três perfis de densidade "
+        "populacional: baixa, média e alta. A transformação "
+        "logarítmica reduziu a influência de valores extremos. "
+        "O Método do Cotovelo e o Silhouette Score foram "
+        "utilizados para avaliar a quantidade de clusters."
     )
